@@ -1,34 +1,22 @@
 {
   "manifest_version": 3,
-  "name": "苏格拉底辩证提问",
-  "version": "1.0.0",
-  "description": "划词选中文本，获取苏格拉底式辩证提问",
+  "name": "苏格拉底辩证助手",
+  "version": "1.0",
+  "description": "划词选中文本，右键使用苏格拉底模式质询",
   "permissions": [
     "sidePanel",
+    "contextMenus",
     "storage"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "http://localhost:8000/*"
   ],
-  "side_panel": {
-    "default_path": "sidepanel.html"
-  },
   "background": {
     "service_worker": "background.js"
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content.js"
-      ],
-      "css": [
-        "content.css"
-      ]
-    }
-  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

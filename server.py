@@ -161,7 +161,8 @@ async def _stream_socratic(user_input: str) -> AsyncGenerator[str, None]:
             }
         )
 
-    except Exception as e:
+            yield "data: [DONE]\n\n"
+except Exception as e:
         yield _sse_event("error", {"message": str(e)})
 
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>苏格拉底辩证提问</title>
+  <title>苏格拉底辩证助手</title>
   <style>
     :root {
       --bg: #1a1a2e;
@@ -24,8 +24,6 @@
       flex-direction: column;
       font-size: 14px;
     }
-
-    /* Header */
     .header {
       padding: 16px 20px;
       background: var(--card);
@@ -49,8 +47,6 @@
       border-radius: 10px;
       margin-left: auto;
     }
-
-    /* Source text area */
     .source-card {
       padding: 14px 20px;
       background: var(--card);
@@ -82,8 +78,6 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-
-    /* Chat area */
     .chat-area {
       flex: 1;
       padding: 16px 20px;
@@ -92,8 +86,6 @@
       flex-direction: column;
       gap: 14px;
     }
-
-    /* Status messages */
     .status-msg {
       display: flex;
       align-items: center;
@@ -113,8 +105,6 @@
       0%, 100% { opacity: 0.4; }
       50% { opacity: 1; }
     }
-
-    /* Question bubble */
     .question-card {
       padding: 16px 18px;
       background: linear-gradient(135deg, #1e1e3f, #1a1a35);
@@ -151,8 +141,6 @@
     .question-card .q-text .cursor.done {
       display: none;
     }
-
-    /* Debug info */
     .debug-card {
       padding: 10px 14px;
       background: rgba(102, 126, 234, 0.08);
@@ -163,8 +151,6 @@
     .debug-card span {
       color: var(--accent2);
     }
-
-    /* Empty state */
     .empty-state {
       flex: 1;
       display: flex;
@@ -182,11 +168,9 @@
     }
     .empty-state p {
       font-size: 13px;
-      max-width: 220px;
+      max-width: 240px;
       line-height: 1.6;
     }
-
-    /* Error */
     .error-card {
       padding: 14px 18px;
       background: rgba(233, 69, 96, 0.1);
@@ -195,8 +179,6 @@
       color: var(--accent);
       font-size: 13px;
     }
-
-    /* Footer */
     .footer {
       padding: 10px 20px;
       background: var(--card);
@@ -209,17 +191,17 @@
 </head>
 <body>
   <div class="header">
-    <h1>🏛️ 苏格拉底辩证提问</h1>
+    <h1>🏛️ 苏格拉底辩证助手</h1>
     <span class="badge" id="statusBadge">就绪</span>
   </div>
 
   <div id="mainContent" class="empty-state">
     <div class="icon">📜</div>
-    <p>在任意网页上<strong>划词选中文本</strong>，点击悬浮按钮，苏格拉底将向您提问。</p>
+    <p>在任意网页<strong>划词选中文本</strong>，右键点击「苏格拉底模式质询」，AI 将逐字提问。</p>
   </div>
 
   <div class="footer">
-    后端: <span id="backendStatus">未连接</span>
+    后端: <span id="backendStatus">检测中...</span>
   </div>
 
   <script src="sidepanel.js"></script>
