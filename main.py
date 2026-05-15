@@ -1,10 +1,8 @@
-"""苏格拉底辩证智能体 — CLI 入口"""
-
-import os
-import sys
-
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+        "rag_counter_example": "",
+        "rag_relevance_score": 0.0,
+        "knowledge_source": "",
+        "socratic_question": "",
+        "turn_count":chain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from graph import build_graph
 
@@ -60,7 +58,11 @@ def _run_once(user_input: str) -> None:
         "core_claim": "",
         "underlying_assumption": "",
         "matched_philosophy": "未知",
+        "opponent_philosophy": "",
+        "opponent_core_argument": "",
         "rag_counter_example": "",
+        "rag_relevance_score": 0.0,
+        "knowledge_source": "",
         "socratic_question": "",
         "turn_count": 1,
     })
@@ -71,6 +73,8 @@ def _run_once(user_input: str) -> None:
         print(f"  [DEBUG] 核心主张: {result.get('core_claim')}")
         print(f"  [DEBUG] 隐含前提: {result.get('underlying_assumption')}")
         print(f"  [DEBUG] 哲学流派: {result.get('matched_philosophy')}")
+        print(f"  [DEBUG] 对立流派: {result.get('opponent_philosophy')}")
+        print(f"  [DEBUG] 对立理由: {result.get('opponent_core_argument')}")
         print(f"  [DEBUG] 反例攻击点: {result.get('rag_counter_example')}")
         print()
 
@@ -116,6 +120,8 @@ def main() -> None:
             "core_claim": "",
             "underlying_assumption": "",
             "matched_philosophy": "未知",
+            "opponent_philosophy": "",
+            "opponent_core_argument": "",
             "rag_counter_example": "",
             "socratic_question": "",
             "turn_count": turn_count,

@@ -108,6 +108,7 @@ def ingest_to_chroma(chunks: list[Document], embeddings: OpenAIEmbeddings) -> Ch
             embedding=embeddings,
             persist_directory=CHROMA_PERSIST_DIR,
             collection_name="socratic_social_justice",
+            collection_metadata={"hnsw:space": "cosine"},
         )
         print(f"[INFO] 成功写入 {vector_store._collection.count()} 条向量。")
         return vector_store

@@ -6,6 +6,9 @@ langchain-text-splitters>=1.0.0
 chromadb>=1.0.0
 python-dotenv>=1.0.0
 
+# Web Search
+tavily-python>=0.7.0
+
 # Dev
 pytest>=8.0.0
 pytest-cov>=6.0.0

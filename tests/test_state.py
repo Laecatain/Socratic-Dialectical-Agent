@@ -32,8 +32,6 @@ class TestAnalyzerOutput:
             matched_philosophy="未知",
         )
         d = output.model_dump()
-        assert d == {
-            "core_claim": "c",
-            "underlying_assumption": "a",
-            "matched_philosophy": "未知",
-        }
+        assert d["core_claim"] == "c"
+        assert d["underlying_assumption"] == "a"
+        assert d["matched_philosophy"] == "未知"

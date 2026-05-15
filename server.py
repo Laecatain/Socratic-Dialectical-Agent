@@ -88,7 +88,11 @@ async def _stream_socratic(user_input: str) -> AsyncGenerator[str, None]:
         "core_claim": "",
         "underlying_assumption": "",
         "matched_philosophy": "未知",
+        "opponent_philosophy": "",
+        "opponent_core_argument": "",
         "rag_counter_example": "",
+        "rag_relevance_score": 0.0,
+        "knowledge_source": "",
         "socratic_question": "",
         "turn_count": 1,
     }
@@ -147,6 +151,8 @@ async def _stream_socratic(user_input: str) -> AsyncGenerator[str, None]:
                 "socratic_question": socratic_q,
                 "core_claim": intermediate_data.get("Analyzer", {}).get("core_claim", ""),
                 "philosophy": intermediate_data.get("Analyzer", {}).get("matched_philosophy", "未知"),
+                "opponent_philosophy": intermediate_data.get("Analyzer", {}).get("opponent_philosophy", ""),
+                "opponent_core_argument": intermediate_data.get("Analyzer", {}).get("opponent_core_argument", ""),
             }
         )
         yield "data: [DONE]\n\n"
