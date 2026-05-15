@@ -12,6 +12,14 @@ from fastapi.responses import StreamingResponse
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from pydantic import BaseModel
 
+import sys
+import io
+
+# Force UTF-8 on Windows to avoid charmap encoding errors
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
 from graph import build_graph
 
 load_dotenv()

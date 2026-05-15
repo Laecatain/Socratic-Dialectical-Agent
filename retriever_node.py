@@ -84,8 +84,8 @@ def make_retrieve_contradiction(
                 )
             except Exception as e:
                 sys.exit(
-                    f"[FATAL] 无法连接 ChromaDB（路径: {CHROMA_PERSIST_DIR}）: {e}\n"
-                    f"请先运行 ingest.py 构建向量库。"
+                    f"[FATAL] ChromaDB connection failed (path: {CHROMA_PERSIST_DIR}): {e}\n"
+                    f"Please run ingest.py first to build the vector store."
                 )
         return vector_store
 
@@ -111,10 +111,10 @@ def make_retrieve_contradiction(
         except Exception as e:
             # 降级：直接用 core_claim 检索
             counter_query = core_claim
-            print(f"[WARN] 反事实查询词生成失败 ({e})，降级为直接检索。")
+            print(f"[WARN] counter query generation failed ({e}), fallback to direct search")
 
-        print(f"[INFO] 用户主张: {core_claim}")
-        print(f"[INFO] 反事实查询词: {counter_query}")
+        print(f"[INFO] user_claim: {core_claim[:80]}")
+        print(f"[INFO] counter_query: {counter_query[:80]}")
 
         # ---- Step 2: 在 ChromaDB 中检索反例 ----
         store = _get_vector_store()
@@ -148,7 +148,7 @@ def make_retrieve_contradiction(
             )
 
         rag_result = "\n\n---\n\n".join(retrieved_texts)
-        print(f"[INFO] 检索到 {len(results)} 条反例。")
+        print(f"[INFO] retrieved {len(results)} counter examples")
 
         return {"rag_counter_example": rag_result}
 
