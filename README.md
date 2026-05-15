@@ -98,4 +98,4 @@ cp .env.example .env
 
 ## 许可证
 
-MIT
+CC BY-NC 4.0 — 仅限非商业使用。
