@@ -16,8 +16,6 @@ from graph import build_graph
 
 load_dotenv()
 
-# ---------- 应用初始化 ----------
-
 app = FastAPI(title="Socratic Dialectical Agent API", version="1.0.0")
 
 app.add_middleware(
@@ -28,8 +26,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# ---------- LLM 初始化 ----------
 
 def _init_llm_and_graph():
     api_key = os.getenv("OPENAI_API_KEY")
@@ -69,25 +65,16 @@ def _init_llm_and_graph():
 _graph = _init_llm_and_graph()
 
 
-# ---------- 请求模型 ----------
-
 class SocraticRequest(BaseModel):
     text: str
     context_url: str = ""
 
 
-# ---------- SSE 辅助函数 ----------
-
 def _sse_event(event: str, data: dict) -> str:
-    """构建一条 SSE 事件字符串。"""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-# ---------- 流式端点 ----------
-
 async def _stream_socratic(user_input: str) -> AsyncGenerator[str, None]:
-    """运行 LangGraph 并通过 SSE 推送 streaming 结果。"""
-
     initial_state = {
         "user_input": user_input,
         "core_claim": "",
@@ -98,7 +85,6 @@ async def _stream_socratic(user_input: str) -> AsyncGenerator[str, None]:
         "turn_count": 1,
     }
 
-    # 发送开始事件
     yield _sse_event("status", {"phase": "started", "message": "开始分析..."})
 
     current_node = None
@@ -109,7 +95,6 @@ async def _stream_socratic(user_input: str) -> AsyncGenerator[str, None]:
             kind = event.get("event")
             name = event.get("name")
 
-            # ---- 节点进入 ----
             if kind == "on_chain_start" and name in (
                 "Analyzer", "Retriever", "Socratic_Ironist"
             ):
@@ -124,7 +109,6 @@ async def _stream_socratic(user_input: str) -> AsyncGenerator[str, None]:
                     {"node": name, "message": node_labels.get(name, name)}
                 )
 
-            # ---- 节点完成 ----
             elif kind == "on_chain_end" and name in (
                 "Analyzer", "Retriever", "Socratic_Ironist"
             ):
@@ -136,19 +120,16 @@ async def _stream_socratic(user_input: str) -> AsyncGenerator[str, None]:
                 )
                 current_node = None
 
-            # ---- LLM Token 流（仅对 Socratic_Ironist 节点进行逐字推送）----
             elif kind == "on_chat_model_stream":
                 chunk = event.get("data", {}).get("chunk")
                 if chunk and hasattr(chunk, "content") and chunk.content:
                     token_text = chunk.content
-                    # 通过 metadata 中的 langgraph_node 判断
                     metadata = event.get("metadata", {})
                     node_from_meta = metadata.get("langgraph_node", "")
 
                     if node_from_meta == "Socratic_Ironist" or current_node == "Socratic_Ironist":
                         yield _sse_event("token", {"content": token_text})
 
-        # 发送完成事件
         socratic_q = intermediate_data.get("Socratic_Ironist", {}).get(
             "socratic_question", ""
         )
@@ -160,16 +141,14 @@ async def _stream_socratic(user_input: str) -> AsyncGenerator[str, None]:
                 "philosophy": intermediate_data.get("Analyzer", {}).get("matched_philosophy", "未知"),
             }
         )
+        yield "data: [DONE]\n\n"
 
-            yield "data: [DONE]\n\n"
-except Exception as e:
+    except Exception as e:
         yield _sse_event("error", {"message": str(e)})
 
 
 @app.post("/api/v1/socratic/stream")
 async def socratic_stream(req: SocraticRequest, request: Request):
-    """SSE 流式端点：接收划词文本，返回苏格拉底式提问。"""
-
     async def event_generator():
         disconnected = False
 
