@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "command": "& \".venv\\Scripts\\python.exe\" -m ruff check --fix \"$FILE_PATH\"",
+        "description": "Lint edited Python files with ruff"
+      },
+      {
+        "matcher": "Write|Edit",
+        "command": "& \".venv\\Scripts\\python.exe\" -m ruff format --check \"$FILE_PATH\"",
+        "description": "Check formatting of edited Python files"
+      }
+    ],
+    "Stop": [
+      {
+        "command": "& \".venv\\Scripts\\python.exe\" -m pytest --cov=. --cov-report=term-missing",
+        "description": "Run tests and coverage before session end"
+      }
+    ]
+  },
+  "allowedTools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash",
+    "PowerShell",
+    "TodoWrite",
+    "TaskOutput",
+    "TaskStop",
+    "Agent",
+    "AskUserQuestion",
+    "WebFetch",
+    "WebSearch"
+  ]
+}

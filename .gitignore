@@ -1,0 +1,29 @@
+﻿# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Test artifacts
+.coverage
+.pytest_cache/
+
+# ChromaDB 向量数据库
+chroma_db/
+
+# Virtual environment
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
