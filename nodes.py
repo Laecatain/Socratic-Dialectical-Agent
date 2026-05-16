@@ -1,4 +1,4 @@
-﻿"""苏格拉底辩证智能体 — 图节点定义"""
+"""苏格拉底辩证智能体 — 图节点定义"""
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
@@ -108,7 +108,15 @@ IRONIST_HUMAN_TEMPLATE = (
     "用户所属流派：{matched_philosophy}\n"
     "经典对立流派：{opponent_philosophy}\n"
     "对立流派核心理由：{opponent_core_argument}\n"
-    "知识库反例：{rag_counter_example}"
+    "知识来源：{knowledge_source}\n"
+    "知识相似度：{rag_relevance_score}\n"
+    "  (提示：分数低于0.5则外部反例关联弱，加大自主发散)\n"
+    "外部精准反例：{rag_counter_example}\n"
+    "你必须借鉴的对立论证：{opponent_core_argument}\n"
+    "审问指令：\n"
+    "1. 观察用户暴论与隐含前提。\n"
+    "2. 若外部反例有精妙思想实验，转化为尖锐生活反问。\n"
+    "3. 严禁陈述句答案！佯装无知，用反问将逻辑推向荒谬极端。"
 )
 
 
@@ -132,6 +140,8 @@ def make_socratic_ironist(llm: ChatOpenAI) -> callable:
                 "opponent_philosophy": state.get("opponent_philosophy", ""),
                 "opponent_core_argument": state.get("opponent_core_argument", ""),
                 "rag_counter_example": state["rag_counter_example"],
+                "rag_relevance_score": state.get("rag_relevance_score", 0.0),
+                "knowledge_source": state.get("knowledge_source", "unknown"),
             }
         )
         return {"socratic_question": response.content}

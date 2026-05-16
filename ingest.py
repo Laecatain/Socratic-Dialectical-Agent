@@ -98,22 +98,21 @@ def init_embeddings() -> OpenAIEmbeddings:
     return OpenAIEmbeddings(**kwargs)
 
 
-def ingest_to_chroma(chunks: list[Document], embeddings: OpenAIEmbeddings) -> Chroma:
-    """将分块文档写入 ChromaDB 并持久化。"""
-    print(f"[INFO] 正在写入 ChromaDB -> {CHROMA_PERSIST_DIR}")
-
-    try:
-        vector_store = Chroma.from_documents(
-            documents=chunks,
-            embedding=embeddings,
-            persist_directory=CHROMA_PERSIST_DIR,
-            collection_name="socratic_social_justice",
-            collection_metadata={"hnsw:space": "cosine"},
-        )
-        print(f"[INFO] 成功写入 {vector_store._collection.count()} 条向量。")
-        return vector_store
-    except Exception as e:
-        sys.exit(f"[ERROR] ChromaDB 写入失败: {e}")
+def ingest_to_chroma(chunks, embeddings):
+    BATCH_SIZE = 10
+    vs = None
+    for i in range(0, len(chunks), BATCH_SIZE):
+        batch = chunks[i:i + BATCH_SIZE]
+        if vs is None:
+            vs = Chroma.from_documents(documents=batch, embedding=embeddings,
+                persist_directory=CHROMA_PERSIST_DIR,
+                collection_name="socratic_social_justice",
+                collection_metadata={"hnsw:space": "cosine"})
+        else:
+            vs.add_documents(documents=batch)
+        print(f"[INFO] Batch ingested {len(batch)} chunks")
+    print(f"[INFO] Total: {vs._collection.count()} vectors")
+    return vs
 
 
 def main() -> None:
