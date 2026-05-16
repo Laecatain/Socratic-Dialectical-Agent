@@ -11,16 +11,22 @@
 cp .env.example .env
 # 编辑 .env 填入 OPENAI_API_KEY 和 EMBEDDING_API_KEY
 
-# 2. 安装依赖
+# 2. 安装后端依赖
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 
 # 3. 构建向量知识库
 .venv\Scripts\python.exe ingest.py
 
-# 4. 启动 CLI（交互模式）
-.venv\Scripts\python.exe main.py
+# 4. 安装前端依赖
+cd frontend && npm install && cd ..
 
-# 或单次执行模式
+# 5. 启动后端（FastAPI :8000）
+.venv\Scripts\python.exe server.py
+
+# 6. 启动前端（Vite :5173）
+cd frontend && npm run dev
+
+# 或纯 CLI 模式（无需前端）
 .venv\Scripts\python.exe main.py "富人应该多交税"
 ```
 
@@ -29,16 +35,39 @@ cp .env.example .env
 ## 管线
 
 ```
-用户输入 → Analyzer → Retriever (ChromaDB) ──达标──→ Socratic_Ironist → 反问
-                                        └─不达标─→ Web_Search (Tavily) ──→ Socratic_Ironist
+START → Analyzer → Retriever (ChromaDB) ──距离≤阈值──→ Socratic_Ironist → 反问
+                                         ──距离>阈值──→ Web_Search (Tavily) ──→ Socratic_Ironist → 反问
+                                                   (无 Tavily Key 时降级直通 Ironist)
 ```
+
+条件路由由 [`graph.py`](graph.py) 中的 `route_after_retriever()` 实现，基于 ChromaDB 余弦距离与 `SIMILARITY_THRESHOLD` 的比较。
 
 | 节点 | 文件 | 职责 |
 |------|------|------|
-| **Analyzer** | `nodes.py` | 深度哲学分析。提取核心主张、隐含前提、匹配哲学流派，并定位经典对立流派及其核心理由 |
+| **Analyzer** | `nodes.py` | 深度哲学分析。提取 5 个字段：`core_claim`（核心主张）、`underlying_assumption`（隐含前提）、`matched_philosophy`（匹配流派）、`opponent_philosophy`（经典对立流派）、`opponent_core_argument`（对立核心理由） |
 | **Retriever** | `retriever_node.py` | 对抗性检索。先用 LLM 生成反事实查询词（而非搜索相似文本），再到 ChromaDB 中搜索经典反例，返回余弦距离分数 |
-| **Web_Search** | `web_search_node.py` | 动态知识流。当 ChromaDB 检索质量不足时，通过 Tavily API 搜索互联网反例作为补充 |
+| **Web_Search** | `web_search_node.py` | 动态知识流。当 ChromaDB 检索质量不足时，通过 Tavily API 搜索互联网反例作为补充。含多重降级策略（Key 缺失/包未安装/API 异常） |
 | **Socratic_Ironist** | `nodes.py` | 苏格拉底式讽刺审问者。佯装无知、推向极端、揭示定义中的不一致，输出一句生活化反问 |
+
+### 数据模型 ([state.py](state.py))
+
+`DialogueState` (TypedDict) 在节点间流转，完整字段：
+
+| 字段 | 类型 | 来源节点 | 说明 |
+|------|------|----------|------|
+| `user_input` | `str` | 用户 | 原始输入 |
+| `core_claim` | `str` | Analyzer | 提取的核心哲学主张 |
+| `underlying_assumption` | `str` | Analyzer | 主张的隐含前提 |
+| `matched_philosophy` | `str` | Analyzer | 匹配的哲学流派 |
+| `opponent_philosophy` | `str` | Analyzer | 经典对立流派 |
+| `opponent_core_argument` | `str` | Analyzer | 对立流派的核心理由 |
+| `rag_counter_example` | `str` | Retriever / Web_Search | 检索到的反例文本 |
+| `rag_relevance_score` | `float` | Retriever | ChromaDB 余弦距离（越小越相关） |
+| `knowledge_source` | `str` | Retriever / Web_Search | `chromadb` / `web_search` / `fallback` |
+| `socratic_question` | `str` | Socratic_Ironist | 最终反问 |
+| `turn_count` | `int` | 调用方 | 对话轮数 |
+
+`AnalyzerOutput` (Pydantic) 定义了 Analyzer 节点的结构化输出模型，包含 `PhilosophyCategory` 字面量类型。
 
 ## 架构
 
@@ -71,17 +100,45 @@ cp .env.example .env
 
 > Embedding 与 LLM 可独立配置（DeepSeek 不支持 Embedding，推荐使用阿里云 DashScope 或 OpenAI）。
 
-## 服务端
+## 前后端
 
-```bash
-# 启动 FastAPI SSE 流式服务器
-.venv\Scripts\python.exe server.py
-# → http://localhost:8000
-# → POST /api/v1/socratic/stream (SSE 流式响应)
-# → GET  /health
+### 后端 — FastAPI SSE ([server.py](server.py))
+
+```
+http://localhost:8000
+  POST /api/v1/socratic/stream   SSE 流式响应（请求体 {"text": "..."}）
+  GET  /health                   健康检查
 ```
 
-前端可通过 SSE 接收逐节点状态更新与流式 token 输出。
+SSE 事件类型：
+
+| 事件 | 触发时机 | 数据 |
+|------|----------|------|
+| `status` | 开始分析 | `{"phase": "started", "message": "..."}` |
+| `node_start` | 进入节点 | `{"node": "Analyzer\|Retriever\|Web_Search\|Socratic_Ironist", "message": "..."}` |
+| `node_end` | 节点完成 | `{"node": "...", "output": {...}}`（返回该节点 5 个分析字段） |
+| `token` | Ironist LLM 流式输出 | `{"content": "..."}`（逐 token 推送） |
+| `done` | 全流程完成 | 最终 `socratic_question`、`core_claim` 等 |
+| `error` | 异常 | `{"message": "..."}` |
+
+### 前端 — React SPA ([frontend/](frontend/))
+
+```bash
+cd frontend && npm run dev       # Vite 开发服务器 → http://localhost:5173
+cd frontend && npm run build     # 生产构建 → dist/
+```
+
+技术栈：**React 19 + TypeScript + Vite + Framer Motion + react-markdown**
+
+组件结构：
+
+| 文件 | 职责 |
+|------|------|
+| [`useSocraticStream.ts`](frontend/src/hooks/useSocraticStream.ts) | SSE 流解析 Hook — 管理全生命周期（发起/取消/重连），解析 6 种 SSE 事件，逐 token 更新 `socratic_question` |
+| [`App.tsx`](frontend/src/App.tsx) | 顶层布局 — 左侧 Sidebar（节点进度）, 右侧 DialogueArea（输入/输出） |
+| [`Sidebar.tsx`](frontend/src/components/Sidebar.tsx) | 实时展示 Analyzer/Retriever/Web_Search/Ironist 四节点执行状态，带哲学流派颜色标签 |
+| [`DialogueArea.tsx`](frontend/src/components/DialogueArea.tsx) | 用户输入框 + 苏格拉底提问流式渲染（react-markdown），支持撤销/取消 |
+| [`types.ts`](frontend/src/types.ts) | `AgentState` 接口与后端 `DialogueState` 一一对应，中文节点标签 + 哲学流派色板 |
 
 ## 开发
 
