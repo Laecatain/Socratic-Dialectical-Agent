@@ -119,6 +119,39 @@ html, body, #root {
 }
 
 /* ============================================
+   矛盾伏击警报
+   ============================================ */
+
+.contradiction-alert {
+  background: rgba(229, 115, 115, 0.06);
+  border-bottom: 1px solid rgba(229, 115, 115, 0.2);
+}
+
+.contradiction-alert h3 {
+  color: #e57373 !important;
+}
+
+.alert-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.alert-premise {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ef5350;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.alert-detail {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  font-style: italic;
+}
+
+/* ============================================
    执行流程节点
    ============================================ */
 
@@ -418,6 +451,22 @@ html, body, #root {
   color: var(--accent);
 }
 
+.header-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.turn-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: rgba(201, 169, 110, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(201, 169, 110, 0.25);
+}
+
 .thinking-indicator {
   font-size: 13px;
   color: var(--active-node);
@@ -509,6 +558,26 @@ html, body, #root {
   color: var(--text-secondary);
   margin: 8px 0;
   font-style: italic;
+}
+
+/* 矛盾伏击消息 */
+
+.message.alert {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 600px;
+}
+
+.message-content.alert {
+  background: rgba(229, 115, 115, 0.08);
+  border: 1px solid rgba(229, 115, 115, 0.25);
+  font-size: 14px;
+  color: #e57373;
+  text-align: center;
+}
+
+.message-content.alert strong {
+  color: #ef5350;
 }
 
 /* ============================================

@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import type { AgentState } from '../types';
 
 const INITIAL_STATE: AgentState = {
@@ -13,7 +13,15 @@ const INITIAL_STATE: AgentState = {
   knowledge_source: '',
   socratic_question: '',
   turn_count: 0,
+  has_contradiction: false,
+  contradiction_details: null,
+  target_premise_id: null,
 };
+
+/** 生成唯一会话 ID */
+function generateThreadId(): string {
+  return `web_${crypto.randomUUID().slice(0, 8)}`;
+}
 
 export function useSocraticStream() {
   const [agentState, setAgentState] = useState<AgentState>(INITIAL_STATE);
@@ -21,12 +29,14 @@ export function useSocraticStream() {
   const [nodeProgress, setNodeProgress] = useState<string[]>([]);
   const [currentNode, setCurrentNode] = useState('idle');
   const abortRef = useRef<AbortController | null>(null);
+  const threadIdRef = useRef<string>(generateThreadId());
 
   const reset = useCallback(() => {
     setAgentState(INITIAL_STATE);
     setIsThinking(false);
     setNodeProgress([]);
     setCurrentNode('idle');
+    threadIdRef.current = generateThreadId();
   }, []);
 
   const cancel = useCallback(() => {
@@ -41,7 +51,8 @@ export function useSocraticStream() {
     abortRef.current = abortController;
 
     setIsThinking(true);
-    setAgentState({ ...INITIAL_STATE, turn_count: 1 });
+    // Clear just the current question for streaming, keep other state
+    setAgentState(prev => ({ ...prev, socratic_question: '', currentNode: 'Analyzer' }));
     setNodeProgress([]);
     setCurrentNode('Analyzer');
 
@@ -49,7 +60,7 @@ export function useSocraticStream() {
       const response = await fetch('http://localhost:8000/api/v1/socratic/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: userInput }),
+        body: JSON.stringify({ text: userInput, thread_id: threadIdRef.current }),
         signal: abortController.signal,
       });
 
@@ -69,9 +80,8 @@ export function useSocraticStream() {
         done = readerDone;
         if (value) {
           buffer += decoder.decode(value, { stream: !done });
-          // Process complete SSE messages from buffer
           const parts = buffer.split('\n\n');
-          buffer = parts.pop() || ''; // Keep incomplete last part
+          buffer = parts.pop() || '';
 
           for (const part of parts) {
             if (!part.trim() || part.trim() === 'data: [DONE]') continue;
@@ -80,13 +90,12 @@ export function useSocraticStream() {
         }
       }
 
-      // Process any remaining buffer
       if (buffer.trim() && buffer.trim() !== 'data: [DONE]') {
         parseSSEMessage(buffer);
       }
     } catch (error: unknown) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        return; // User cancelled, ignore
+        return;
       }
       console.error('Stream error:', error);
       setAgentState(prev => ({
@@ -118,7 +127,11 @@ export function useSocraticStream() {
 
       switch (eventType) {
         case 'status':
-          setAgentState(prev => ({ ...prev, currentNode: data.phase || 'started' }));
+          setAgentState(prev => ({
+            ...prev,
+            currentNode: data.phase || 'started',
+            turn_count: (data.turn as number) || prev.turn_count,
+          }));
           break;
 
         case 'node_start': {
@@ -167,6 +180,10 @@ export function useSocraticStream() {
             matched_philosophy: (data.philosophy as string) || prev.matched_philosophy,
             opponent_philosophy: (data.opponent_philosophy as string) || prev.opponent_philosophy,
             opponent_core_argument: (data.opponent_core_argument as string) || prev.opponent_core_argument,
+            turn_count: (data.turn as number) || prev.turn_count,
+            has_contradiction: (data.has_contradiction as boolean) ?? prev.has_contradiction,
+            contradiction_details: (data.contradiction_details as string | null) ?? prev.contradiction_details,
+            target_premise_id: (data.target_premise_id as string | null) ?? prev.target_premise_id,
           }));
           setCurrentNode('idle');
           break;

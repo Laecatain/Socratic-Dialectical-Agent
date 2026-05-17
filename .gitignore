@@ -24,6 +24,9 @@ venv/
 .vscode/
 .idea/
 
+# Project notes
+技术讲解.md
+
 # OS
 Thumbs.db
 .DS_Store

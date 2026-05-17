@@ -1,4 +1,4 @@
-﻿import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { AgentState } from '../types';
 import { NODE_LABELS, PHILOSOPHY_COLORS } from '../types';
 
@@ -27,6 +27,29 @@ export default function Sidebar({ agentState, nodeProgress, currentNode, isThink
         <h2>思想解剖台</h2>
         <div className={`status-dot ${isThinking ? 'active' : ''}`} />
       </div>
+
+      {/* 矛盾伏击警报 */}
+      <AnimatePresence>
+        {agentState.has_contradiction && (
+          <motion.section
+            className="sidebar-section contradiction-alert"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.4 }}
+          >
+            <h3>⚡ 逻辑矛盾检测</h3>
+            <div className="alert-content">
+              <span className="alert-premise">
+                伏击前提: {agentState.target_premise_id || 'N/A'}
+              </span>
+              {agentState.contradiction_details && (
+                <p className="alert-detail">{agentState.contradiction_details}</p>
+              )}
+            </div>
+          </motion.section>
+        )}
+      </AnimatePresence>
 
       {/* 当前执行节点 */}
       <section className="sidebar-section">
@@ -125,7 +148,7 @@ export default function Sidebar({ agentState, nodeProgress, currentNode, isThink
 
             {agentState.rag_relevance_score > 0 && (
               <div className="field-item">
-                <span className="field-label">距离分数</span>
+                <span className="field-label">相似度分数</span>
                 <SimilarityGauge score={agentState.rag_relevance_score} />
               </div>
             )}
@@ -157,11 +180,12 @@ export default function Sidebar({ agentState, nodeProgress, currentNode, isThink
   );
 }
 
-/** 余弦距离分数仪表盘 */
+/** 相似度分数仪表盘 */
 function SimilarityGauge({ score }: { score: number }) {
   const THRESHOLD = 0.5;
-  const percentage = Math.min((score / THRESHOLD) * 50, 100);
-  const isGood = score <= THRESHOLD;
+  // S_similarity = 1.0 - D_cosine, so ≥0.5 is good
+  const percentage = Math.min((score / 1.0) * 100, 100);
+  const isGood = score >= THRESHOLD;
 
   return (
     <div className="similarity-gauge">

@@ -1,4 +1,4 @@
-﻿// 与后端 DialogueState 对应的前端状态模型
+// 与后端 DialogueState 对应的前端状态模型
 
 export interface AgentState {
   currentNode: string;
@@ -23,6 +23,13 @@ export interface AgentState {
   /** 最终苏格拉底式提问（流式累加） */
   turn_count: number;
   /** 对话轮数 */
+  // 多轮记忆字段
+  has_contradiction: boolean;
+  /** 本轮是否检测到逻辑矛盾 */
+  contradiction_details: string | null;
+  /** 矛盾解剖描述 */
+  target_premise_id: string | null;
+  /** 被伏击的历史前提 ID */
 }
 
 export interface SSEEvent {

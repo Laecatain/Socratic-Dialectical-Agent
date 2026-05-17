@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import type { AgentState } from '../types';
@@ -22,7 +22,7 @@ export default function DialogueArea({
   cancel,
 }: DialogueAreaProps) {
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'socrates'; text: string }>>([]);
+  const [messages, setMessages] = useState<Array<{ role: 'user' | 'socrates' | 'alert'; text: string }>>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevQuestion = useRef('');
@@ -31,12 +31,24 @@ export default function DialogueArea({
   useEffect(() => {
     if (!isThinking && agentState.socratic_question && agentState.socratic_question !== prevQuestion.current) {
       prevQuestion.current = agentState.socratic_question;
-      setMessages(prev => [
-        ...prev,
-        { role: 'socrates', text: agentState.socratic_question },
-      ]);
+      // Check for contradiction ambush
+      if (agentState.has_contradiction) {
+        setMessages(prev => [
+          ...prev,
+          {
+            role: 'alert',
+            text: `⚡ **逻辑伏击！** ${agentState.contradiction_details || '你前后的说法似乎不太一致...'}`,
+          },
+          { role: 'socrates', text: agentState.socratic_question },
+        ]);
+      } else {
+        setMessages(prev => [
+          ...prev,
+          { role: 'socrates', text: agentState.socratic_question },
+        ]);
+      }
     }
-  }, [isThinking, agentState.socratic_question]);
+  }, [isThinking, agentState.socratic_question, agentState.has_contradiction, agentState.contradiction_details]);
 
   // Auto-scroll
   useEffect(() => {
@@ -65,11 +77,16 @@ export default function DialogueArea({
     <main className="dialogue-area">
       <div className="dialogue-header">
         <h1>苏格拉底辩证对话</h1>
-        {isThinking && (
-          <span className="thinking-indicator">
-            正在{NODE_LABELS[currentNode] || '思考'}...
-          </span>
-        )}
+        <div className="header-info">
+          {agentState.turn_count > 0 && (
+            <span className="turn-badge">第 {agentState.turn_count} 轮</span>
+          )}
+          {isThinking && (
+            <span className="thinking-indicator">
+              正在{NODE_LABELS[currentNode] || '思考'}...
+            </span>
+          )}
+        </div>
       </div>
 
       {/* 消息列表 */}
@@ -84,10 +101,12 @@ export default function DialogueArea({
               transition={{ duration: 0.4, ease: 'easeOut' }}
             >
               <div className="message-role">
-                {msg.role === 'user' ? '🧑 你的暴论' : '🏛️ 苏格拉底'}
+                {msg.role === 'user' && '🧑 你的暴论'}
+                {msg.role === 'socrates' && '🏛️ 苏格拉底'}
+                {msg.role === 'alert' && '⚡ 逻辑伏击'}
               </div>
               <div className={`message-content ${msg.role}`}>
-                {msg.role === 'socrates' ? (
+                {msg.role === 'socrates' || msg.role === 'alert' ? (
                   <ReactMarkdown>{msg.text}</ReactMarkdown>
                 ) : (
                   <p>{msg.text}</p>
@@ -120,7 +139,7 @@ export default function DialogueArea({
             <div className="empty-icon">🏛️</div>
             <p>提出你的暴论，让苏格拉底来检验它的根基。</p>
             <p className="empty-hint">
-              「未经审视的人生不值得过」 — 苏格拉底
+              系统会记住你每一轮的前提，一旦发现矛盾，苏格拉底将发动逻辑伏击。
             </p>
           </div>
         )}
@@ -150,7 +169,7 @@ export default function DialogueArea({
           )}
           {messages.length > 0 && !isThinking && (
             <button type="button" className="btn btn-reset" onClick={handleReset}>
-              重置
+              新对话
             </button>
           )}
         </div>

@@ -1,9 +1,10 @@
 
-"""Socratic Dialectical Agent - LangGraph (Dynamic Knowledge Flow)"""
+"""Socratic Dialectical Agent - LangGraph (Dynamic Knowledge Flow + Multi-Turn Memory)"""
 
 import os
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph, START
 
 from state import DialogueState
@@ -23,6 +24,19 @@ def _get_threshold() -> float:
 def _has_tavily_key() -> bool:
     """Check if Tavily API key is configured."""
     return bool(os.getenv("TAVILY_API_KEY", "").strip())
+
+
+def route_after_analyzer(state: DialogueState) -> str:
+    """Route after Analyzer: contradiction shortcut or normal retrieval.
+
+    When the Analyzer detects a logical contradiction between the current
+    input and previously admitted premises, skip the retrieval step entirely
+    and route directly to the Ironist for an ambush question.
+    """
+    if state.get("has_contradiction", False):
+        print("[ROUTE] Contradiction detected! Routing directly to Ironist (ambush mode).")
+        return "Socratic_Ironist"
+    return "Retriever"
 
 
 def route_after_retriever(state: DialogueState) -> str:
@@ -53,13 +67,18 @@ def route_after_retriever(state: DialogueState) -> str:
 
 
 def build_graph(llm: ChatOpenAI, embeddings: OpenAIEmbeddings) -> StateGraph:
-    """Build and compile the Socratic dialectical graph.
+    """Build and compile the Socratic dialectical graph with multi-turn memory.
 
     Flow:
-        START - Analyser - Retriever (HyDE)
-                                  |- (good match) - Socratic_Ironist - END
-                                  |- (poor match + Tavily) - Web_Search - Socratic_Ironist - END
-                                  |- (poor match, no Tavily) - Socratic_Ironist - END
+        START → Analyzer
+                  ├─ (contradiction) → Socratic_Ironist → END
+                  └─ (no contradiction) → Retriever (HyDE)
+                                             ├─ (good match) → Socratic_Ironist → END
+                                             ├─ (poor match + Tavily) → Web_Search → Socratic_Ironist → END
+                                             └─ (poor match, no Tavily) → Socratic_Ironist → END
+
+    The graph is compiled with MemorySaver checkpointer for cross-turn state
+    persistence via thread_id in config.
     """
 
     graph = StateGraph(DialogueState)
@@ -70,7 +89,16 @@ def build_graph(llm: ChatOpenAI, embeddings: OpenAIEmbeddings) -> StateGraph:
     graph.add_node("Socratic_Ironist", make_socratic_ironist(llm))
 
     graph.add_edge(START, "Analyzer")
-    graph.add_edge("Analyzer", "Retriever")
+
+    # After Analyzer: check for contradiction → shortcut to Ironist if found
+    graph.add_conditional_edges(
+        "Analyzer",
+        route_after_analyzer,
+        {
+            "Retriever": "Retriever",
+            "Socratic_Ironist": "Socratic_Ironist",
+        },
+    )
 
     graph.add_conditional_edges(
         "Retriever",
@@ -84,4 +112,5 @@ def build_graph(llm: ChatOpenAI, embeddings: OpenAIEmbeddings) -> StateGraph:
     graph.add_edge("Web_Search", "Socratic_Ironist")
     graph.add_edge("Socratic_Ironist", END)
 
-    return graph.compile()
+    checkpointer = MemorySaver()
+    return graph.compile(checkpointer=checkpointer)

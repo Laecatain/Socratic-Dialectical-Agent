@@ -1,8 +1,9 @@
-"""苏格拉底辩证智能体 — FastAPI SSE 流式后端"""
+"""苏格拉底辩证智能体 — FastAPI SSE 流式后端（多轮记忆版）"""
 
 import json
 import os
 import asyncio
+import uuid
 from typing import AsyncGenerator
 
 from dotenv import load_dotenv
@@ -24,7 +25,7 @@ from graph import build_graph
 
 load_dotenv()
 
-app = FastAPI(title="Socratic Dialectical Agent API", version="1.0.0")
+app = FastAPI(title="Socratic Dialectical Agent API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -76,14 +77,16 @@ _graph = _init_llm_and_graph()
 class SocraticRequest(BaseModel):
     text: str
     context_url: str = ""
+    thread_id: str = ""  # 可选：前端传入以维持多轮会话
 
 
 def _sse_event(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-async def _stream_socratic(user_input: str) -> AsyncGenerator[str, None]:
-    initial_state = {
+def _empty_state(user_input: str, turn_count: int) -> dict:
+    """构建初始状态字典。"""
+    return {
         "user_input": user_input,
         "core_claim": "",
         "underlying_assumption": "",
@@ -94,26 +97,51 @@ async def _stream_socratic(user_input: str) -> AsyncGenerator[str, None]:
         "rag_relevance_score": 0.0,
         "knowledge_source": "",
         "socratic_question": "",
-        "turn_count": 1,
+        "turn_count": turn_count,
+        "admitted_premises": [],
+        "has_contradiction": False,
+        "contradiction_details": None,
+        "target_premise_id": None,
+        "target_premise_statement": None,
+        "target_premise_turn": None,
     }
 
-    yield _sse_event("status", {"phase": "started", "message": "开始分析..."})
+
+async def _stream_socratic(user_input: str, thread_id: str) -> AsyncGenerator[str, None]:
+    config = {"configurable": {"thread_id": thread_id}}
+
+    # 从 checkpointer 恢复 turn_count（若为已有会话）
+    try:
+        current_state = _graph.get_state(config)
+        prev_turn = current_state.values.get("turn_count", 0) if current_state.values else 0
+    except Exception:
+        prev_turn = 0
+
+    initial_state = _empty_state(user_input, prev_turn + 1)
+
+    yield _sse_event("status", {
+        "phase": "started",
+        "message": "开始分析...",
+        "thread_id": thread_id,
+        "turn": prev_turn + 1,
+    })
 
     current_node = None
     intermediate_data: dict = {}
 
     try:
-        async for event in _graph.astream_events(initial_state, version="v2"):
+        async for event in _graph.astream_events(initial_state, config, version="v2"):
             kind = event.get("event")
             name = event.get("name")
 
             if kind == "on_chain_start" and name in (
-                "Analyzer", "Retriever", "Socratic_Ironist"
+                "Analyzer", "Retriever", "Web_Search", "Socratic_Ironist"
             ):
                 current_node = name
                 node_labels = {
                     "Analyzer": "正在提取核心主张...",
                     "Retriever": "正在检索反例...",
+                    "Web_Search": "正在搜索网络反例...",
                     "Socratic_Ironist": "正在生成苏格拉底式提问...",
                 }
                 yield _sse_event(
@@ -122,7 +150,7 @@ async def _stream_socratic(user_input: str) -> AsyncGenerator[str, None]:
                 )
 
             elif kind == "on_chain_end" and name in (
-                "Analyzer", "Retriever", "Socratic_Ironist"
+                "Analyzer", "Retriever", "Web_Search", "Socratic_Ironist"
             ):
                 output = event.get("data", {}).get("output", {})
                 intermediate_data[name] = output
@@ -142,17 +170,23 @@ async def _stream_socratic(user_input: str) -> AsyncGenerator[str, None]:
                     if node_from_meta == "Socratic_Ironist" or current_node == "Socratic_Ironist":
                         yield _sse_event("token", {"content": token_text})
 
+        analyzer_output = intermediate_data.get("Analyzer", {})
         socratic_q = intermediate_data.get("Socratic_Ironist", {}).get(
             "socratic_question", ""
         )
+
         yield _sse_event(
             "done",
             {
                 "socratic_question": socratic_q,
-                "core_claim": intermediate_data.get("Analyzer", {}).get("core_claim", ""),
-                "philosophy": intermediate_data.get("Analyzer", {}).get("matched_philosophy", "未知"),
-                "opponent_philosophy": intermediate_data.get("Analyzer", {}).get("opponent_philosophy", ""),
-                "opponent_core_argument": intermediate_data.get("Analyzer", {}).get("opponent_core_argument", ""),
+                "core_claim": analyzer_output.get("core_claim", ""),
+                "philosophy": analyzer_output.get("matched_philosophy", "未知"),
+                "opponent_philosophy": analyzer_output.get("opponent_philosophy", ""),
+                "opponent_core_argument": analyzer_output.get("opponent_core_argument", ""),
+                "has_contradiction": analyzer_output.get("has_contradiction", False),
+                "contradiction_details": analyzer_output.get("contradiction_details"),
+                "target_premise_id": analyzer_output.get("target_premise_id"),
+                "turn": prev_turn + 1,
             }
         )
         yield "data: [DONE]\n\n"
@@ -163,6 +197,9 @@ async def _stream_socratic(user_input: str) -> AsyncGenerator[str, None]:
 
 @app.post("/api/v1/socratic/stream")
 async def socratic_stream(req: SocraticRequest, request: Request):
+    # 使用前端传入的 thread_id 或自动生成新会话
+    thread_id = req.thread_id.strip() if req.thread_id else f"web_{uuid.uuid4().hex[:8]}"
+
     async def event_generator():
         disconnected = False
 
@@ -177,7 +214,7 @@ async def socratic_stream(req: SocraticRequest, request: Request):
         disconnect_task = asyncio.create_task(check_disconnect())
 
         try:
-            async for chunk in _stream_socratic(req.text):
+            async for chunk in _stream_socratic(req.text, thread_id):
                 if disconnected:
                     break
                 yield chunk
