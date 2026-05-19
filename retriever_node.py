@@ -9,8 +9,8 @@ Core pipeline:
 """
 
 import asyncio
+import logging
 import os
-import sys
 import uuid
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -94,10 +94,10 @@ def make_retrieve_contradiction(
                     collection_name=COLLECTION_NAME,
                 )
             except Exception as e:
-                sys.exit(
-                    f"[FATAL] ChromaDB connect failed: {e}\n"
-                    f"Please run python ingest.py first."
-                )
+                logging.error("ChromaDB connect failed: %s", e)
+                raise RuntimeError(
+                    "ChromaDB 连接失败，请先运行 python ingest.py 构建向量库。"
+                ) from e
         return vector_store
 
     def _handle_miss(state):

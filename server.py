@@ -1,9 +1,12 @@
 """苏格拉底辩证智能体 — FastAPI SSE 流式后端（多轮记忆版）"""
 
 import json
+import logging
 import os
 import asyncio
+import time
 import uuid
+from collections import defaultdict
 from typing import AsyncGenerator
 
 from dotenv import load_dotenv
@@ -11,7 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import sys
 import io
@@ -26,6 +29,31 @@ from graph import build_graph
 load_dotenv()
 
 app = FastAPI(title="Socratic Dialectical Agent API", version="2.0.0")
+
+# ---------- 简易速率限制 ----------
+
+_RATE_LIMIT_WINDOW = 60       # 60 秒窗口
+_RATE_LIMIT_MAX_REQUESTS = 10  # 每窗口最多 10 次请求
+_rate_limit_buckets: dict[str, list[float]] = defaultdict(list)
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    if request.url.path == "/api/v1/socratic/stream":
+        client_ip = request.client.host if request.client else "unknown"
+        now = time.time()
+        bucket = _rate_limit_buckets[client_ip]
+        # 清理过期记录
+        bucket[:] = [t for t in bucket if now - t < _RATE_LIMIT_WINDOW]
+        if len(bucket) >= _RATE_LIMIT_MAX_REQUESTS:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "请求过于频繁，请稍后再试。"},
+            )
+        bucket.append(now)
+    return await call_next(request)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -75,9 +103,8 @@ _graph = _init_llm_and_graph()
 
 
 class SocraticRequest(BaseModel):
-    text: str
-    context_url: str = ""
-    thread_id: str = ""  # 可选：前端传入以维持多轮会话
+    text: str = Field(min_length=1, max_length=5000, description="用户输入文本")
+    thread_id: str = Field(default="", max_length=64, description="多轮会话ID")
 
 
 def _sse_event(event: str, data: dict) -> str:
@@ -192,7 +219,8 @@ async def _stream_socratic(user_input: str, thread_id: str) -> AsyncGenerator[st
         yield "data: [DONE]\n\n"
 
     except Exception as e:
-        yield _sse_event("error", {"message": str(e)})
+        logging.exception("Socratic stream error")
+        yield _sse_event("error", {"message": "处理请求时发生内部错误，请稍后重试。"})
 
 
 @app.post("/api/v1/socratic/stream")
