@@ -42,6 +42,10 @@ cd frontend && npm run build
 & ".venv\Scripts\python.exe" -m ruff check . --exclude .venv
 ```
 
+## Development Workflow
+
+Detailed development workflow lives in [.claude/workflows/development.md](.claude/workflows/development.md). Use it for setup checks, backend/frontend loops, quality gates, hook maintenance, and the automatic commit policy.
+
 ## Architecture
 
 A LangGraph pipeline with **multi-turn memory** that implements Socratic dialogue around **social fairness (社会公平)**. The system tracks each user's admitted premises across conversation turns via `MemorySaver` checkpointer, and detects logical self-contradiction to deliver targeted "ambush" counter-questions. Each turn receives a counter-question via **adversarial retrieval** — never an answer.

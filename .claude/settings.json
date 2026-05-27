@@ -3,19 +3,38 @@
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
-        "command": "& \".venv\\Scripts\\python.exe\" -m ruff check --fix \"$FILE_PATH\"",
-        "description": "Lint edited Python files with ruff"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.venv/Scripts/python.exe .claude/hook_ruff.py check",
+            "shell": "bash",
+            "statusMessage": "Linting edited Python files with ruff"
+          }
+        ]
       },
       {
         "matcher": "Write|Edit",
-        "command": "& \".venv\\Scripts\\python.exe\" -m ruff format --check \"$FILE_PATH\"",
-        "description": "Check formatting of edited Python files"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.venv/Scripts/python.exe .claude/hook_ruff.py format-check",
+            "shell": "bash",
+            "statusMessage": "Checking edited Python file formatting"
+          }
+        ]
       }
     ],
     "Stop": [
       {
-        "command": "& \".venv\\Scripts\\python.exe\" -m pytest --cov=. --cov-report=term-missing",
-        "description": "Run tests and coverage before session end"
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.venv/Scripts/python.exe -m pytest tests/ --cov=nodes --cov=retriever_node --cov=state --cov=graph --cov=web_search_node --cov-report=term-missing",
+            "shell": "bash",
+            "statusMessage": "Running tests and coverage before session end"
+          }
+        ]
       }
     ]
   },
