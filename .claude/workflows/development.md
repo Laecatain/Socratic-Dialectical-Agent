@@ -5,10 +5,11 @@ Use this workflow for reliable local development. Prefer the documented PowerShe
 ## 1. Start-of-session checks
 
 1. Run a quick status check before editing: `git status --short`.
-2. Confirm the Python venv and frontend dependencies exist before running app checks:
+2. Confirm `.env` exists, but never print or commit its values. Required chat settings are `OPENAI_API_KEY`, `OPENAI_API_BASE`, and `OPENAI_MODEL_NAME`; configure `EMBEDDING_*` separately when the chat provider does not support embeddings.
+3. Confirm the Python venv and frontend dependencies exist before running app checks:
    - Python commands should use `.venv\Scripts\python.exe` from the repo root.
    - Frontend commands should run from `frontend/`.
-3. Leave generated/cache directories alone unless explicitly cleaning them: `.venv/`, `chroma_db/`, `.pytest_cache/`, `.ruff_cache/`, `frontend/.vite/`, and `frontend/node_modules/`.
+4. Leave generated/cache directories alone unless explicitly cleaning them: `.venv/`, `chroma_db/`, `.pytest_cache/`, `.ruff_cache/`, `frontend/.vite/`, `frontend/dist/`, and `frontend/node_modules/`.
 
 ## 2. Backend change loop
 
@@ -31,6 +32,7 @@ Use this workflow for reliable local development. Prefer the documented PowerShe
    - `& ".venv\Scripts\python.exe" main.py 考大学应该给贫困地区的学生加分`
    - `$env:DEBUG = "1"; & ".venv\Scripts\python.exe" main.py`
 3. Verify fallback behavior when `TAVILY_API_KEY` is absent or web search fails; the app should still route to `Socratic_Ironist`.
+4. Treat `chroma_db/` as a generated persistent vector store. If a clean rebuild is needed, explicitly confirm before deleting it, then rerun `ingest.py`; do not mix that cleanup into unrelated changes.
 
 ## 4. Frontend change loop
 
@@ -59,14 +61,14 @@ Use this workflow for reliable local development. Prefer the documented PowerShe
 
 ## 6. Pre-commit quality gate
 
-Before committing, run the smallest set that covers the touched surfaces:
+Before committing, run the smallest set that covers the touched surfaces and confirm `git status --short` does not include secrets or generated artifacts.
 
 - Python-only: ruff + relevant pytest + full `pytest tests/`.
 - Retrieval/corpus: `ingest.py` + retrieval smoke test + relevant pytest.
 - Frontend-only: `npm run lint` + `npm run build` + browser smoke test.
 - Full-stack/SSE: backend server + frontend dev server + browser SSE smoke test + backend tests + frontend build.
 
-If any check fails, fix the underlying cause instead of bypassing hooks or skipping tests.
+If any check fails, fix the underlying cause instead of bypassing hooks or skipping tests. Do not claim the 80% coverage target is satisfied unless the coverage run actually shows it; if coverage is below target, either add tests or call out the gap explicitly.
 
 ## 7. Automatic commit policy
 
@@ -89,3 +91,12 @@ Recommended types:
 - `chore`: tooling, hooks, dependencies, generated maintenance.
 
 For mixed changes, choose the type that describes the highest-impact user outcome. For example, a hook schema repair plus workflow documentation should use `fix:` because the primary outcome is restoring valid Claude Code configuration.
+
+## 8. Failure handling
+
+1. Backend startup failures: check `.env` presence and provider settings first; missing `OPENAI_*` values can prevent `server.py` from initializing the graph.
+2. Embedding or ingest failures: verify `EMBEDDING_*` settings separately from chat settings. Do not assume every chat provider supports embeddings.
+3. Retrieval quality regressions: confirm `chroma_db/` was rebuilt after corpus changes, then inspect `SIMILARITY_THRESHOLD` and optional `TAVILY_API_KEY` behavior.
+4. Frontend stream stalls: separate backend SSE availability, frontend stream parsing, and AbortController cancellation before changing business logic.
+5. Test failures: preserve core guarantees for Analyzer JSON parsing, markdown code-block stripping, multi-turn contradiction detection, and ambush mode; fix implementation before weakening assertions.
+6. Git status surprises: unstage or ignore generated artifacts such as `frontend/.vite/`, `frontend/dist/`, `node_modules/`, `.venv/`, and `chroma_db/` before committing.
