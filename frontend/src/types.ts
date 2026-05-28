@@ -21,6 +21,8 @@ export interface AgentState {
   /** 知识来源 */
   socratic_question: string;
   /** 最终苏格拉底式提问（流式累加） */
+  error_message: string;
+  /** 面向用户的请求错误提示 */
   turn_count: number;
   /** 对话轮数 */
   // 多轮记忆字段
@@ -36,6 +38,8 @@ export interface SSEEvent {
   event: string;
   data: Record<string, unknown>;
 }
+
+export type StreamStatus = 'idle' | 'streaming' | 'completed' | 'canceled' | 'error';
 
 /** 后端 SSE 事件类型 */
 export type SSEEventType =

@@ -7,6 +7,7 @@ function App() {
   const {
     agentState,
     isThinking,
+    streamStatus,
     nodeProgress,
     currentNode,
     askSocrates,
@@ -25,6 +26,7 @@ function App() {
       <DialogueArea
         agentState={agentState}
         isThinking={isThinking}
+        streamStatus={streamStatus}
         currentNode={currentNode}
         askSocrates={askSocrates}
         reset={reset}

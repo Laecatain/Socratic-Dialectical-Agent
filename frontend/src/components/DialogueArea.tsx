@@ -1,12 +1,56 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
-import type { AgentState } from '../types';
+import type { AgentState, StreamStatus } from '../types';
 import { NODE_LABELS } from '../types';
+
+const MARKDOWN_COMPONENTS = {
+  img: () => null,
+  a: ({ href, children }: { href?: string; children?: ReactNode }) => (
+    <a href={href} target="_blank" rel="noreferrer noopener">
+      {children}
+    </a>
+  ),
+};
+
+type Message = { role: 'user' | 'socrates' | 'alert'; text: string };
+
+function finalMessagesFor(agentState: AgentState): Message[] {
+  if (!agentState.socratic_question) return [];
+
+  if (agentState.has_contradiction) {
+    return [
+      {
+        role: 'alert',
+        text: `⚡ **逻辑伏击！** ${agentState.contradiction_details || '你前后的说法似乎不太一致...'}`,
+      },
+      { role: 'socrates', text: agentState.socratic_question },
+    ];
+  }
+
+  return [{ role: 'socrates', text: agentState.socratic_question }];
+}
+
+function visibleMessagesFor(
+  messages: Message[],
+  agentState: AgentState,
+  streamStatus: StreamStatus,
+): Message[] {
+  if (streamStatus === 'completed') {
+    return [...messages, ...finalMessagesFor(agentState)];
+  }
+
+  if (streamStatus === 'error' && agentState.error_message) {
+    return [...messages, { role: 'alert', text: agentState.error_message }];
+  }
+
+  return messages;
+}
 
 interface DialogueAreaProps {
   agentState: AgentState;
   isThinking: boolean;
+  streamStatus: StreamStatus;
   currentNode: string;
   askSocrates: (input: string) => void;
   reset: () => void;
@@ -16,52 +60,34 @@ interface DialogueAreaProps {
 export default function DialogueArea({
   agentState,
   isThinking,
+  streamStatus,
   currentNode,
   askSocrates,
   reset,
   cancel,
 }: DialogueAreaProps) {
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'socrates' | 'alert'; text: string }>>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const prevQuestion = useRef('');
 
-  // When socratic_question finalizes, add it to messages
-  useEffect(() => {
-    if (!isThinking && agentState.socratic_question && agentState.socratic_question !== prevQuestion.current) {
-      prevQuestion.current = agentState.socratic_question;
-      // Check for contradiction ambush
-      if (agentState.has_contradiction) {
-        setMessages(prev => [
-          ...prev,
-          {
-            role: 'alert',
-            text: `⚡ **逻辑伏击！** ${agentState.contradiction_details || '你前后的说法似乎不太一致...'}`,
-          },
-          { role: 'socrates', text: agentState.socratic_question },
-        ]);
-      } else {
-        setMessages(prev => [
-          ...prev,
-          { role: 'socrates', text: agentState.socratic_question },
-        ]);
-      }
-    }
-  }, [isThinking, agentState.socratic_question, agentState.has_contradiction, agentState.contradiction_details]);
+  const visibleMessages = useMemo(
+    () => visibleMessagesFor(messages, agentState, streamStatus),
+    [agentState, messages, streamStatus],
+  );
 
   // Auto-scroll
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [agentState.socratic_question, messages]);
+  }, [agentState.socratic_question, visibleMessages]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = input.trim();
     if (!trimmed || isThinking) return;
 
-    prevQuestion.current = '';
-    setMessages(prev => [...prev, { role: 'user', text: trimmed }]);
+    const completedMessages = streamStatus === 'completed' ? finalMessagesFor(agentState) : [];
+    setMessages(prev => [...prev, ...completedMessages, { role: 'user', text: trimmed }]);
     setInput('');
     askSocrates(trimmed);
   };
@@ -69,7 +95,6 @@ export default function DialogueArea({
   const handleReset = () => {
     reset();
     setMessages([]);
-    prevQuestion.current = '';
     inputRef.current?.focus();
   };
 
@@ -92,7 +117,7 @@ export default function DialogueArea({
       {/* 消息列表 */}
       <div className="messages-container" ref={scrollRef}>
         <AnimatePresence>
-          {messages.map((msg, i) => (
+          {visibleMessages.map((msg, i) => (
             <motion.div
               key={i}
               className={`message ${msg.role}`}
@@ -107,7 +132,7 @@ export default function DialogueArea({
               </div>
               <div className={`message-content ${msg.role}`}>
                 {msg.role === 'socrates' || msg.role === 'alert' ? (
-                  <ReactMarkdown>{msg.text}</ReactMarkdown>
+                  <ReactMarkdown components={MARKDOWN_COMPONENTS}>{msg.text}</ReactMarkdown>
                 ) : (
                   <p>{msg.text}</p>
                 )}
@@ -117,7 +142,7 @@ export default function DialogueArea({
         </AnimatePresence>
 
         {/* 流式输出中的苏格拉底回复 */}
-        {isThinking && agentState.socratic_question && (
+        {streamStatus === 'streaming' && agentState.socratic_question && (
           <motion.div
             className="message socrates streaming"
             initial={{ opacity: 0, y: 10 }}
@@ -128,13 +153,13 @@ export default function DialogueArea({
               <span className="typing-cursor" />
             </div>
             <div className="message-content socrates">
-              <ReactMarkdown>{agentState.socratic_question}</ReactMarkdown>
+              <ReactMarkdown components={MARKDOWN_COMPONENTS}>{agentState.socratic_question}</ReactMarkdown>
               <span className="inline-cursor">▌</span>
             </div>
           </motion.div>
         )}
 
-        {messages.length === 0 && !isThinking && (
+        {visibleMessages.length === 0 && !isThinking && (
           <div className="empty-state">
             <div className="empty-icon">🏛️</div>
             <p>提出你的暴论，让苏格拉底来检验它的根基。</p>
@@ -167,7 +192,7 @@ export default function DialogueArea({
               发问
             </button>
           )}
-          {messages.length > 0 && !isThinking && (
+          {visibleMessages.length > 0 && !isThinking && (
             <button type="button" className="btn btn-reset" onClick={handleReset}>
               新对话
             </button>

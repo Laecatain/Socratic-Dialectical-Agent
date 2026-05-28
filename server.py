@@ -1,13 +1,18 @@
 """苏格拉底辩证智能体 — FastAPI SSE 流式后端（多轮记忆版）"""
 
+import asyncio
+import copy
+import hashlib
+import hmac
 import json
 import logging
 import os
-import asyncio
+import re
+import secrets
+import sys
 import time
-import uuid
 from collections import defaultdict
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -16,13 +21,12 @@ from fastapi.responses import StreamingResponse
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from pydantic import BaseModel, Field
 
-import sys
-import io
 
 # Force UTF-8 on Windows to avoid charmap encoding errors
 if sys.platform == "win32":
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
 from graph import build_graph
 
@@ -32,9 +36,26 @@ app = FastAPI(title="Socratic Dialectical Agent API", version="2.0.0")
 
 # ---------- 简易速率限制 ----------
 
-_RATE_LIMIT_WINDOW = 60       # 60 秒窗口
+_RATE_LIMIT_WINDOW = 60  # 60 秒窗口
 _RATE_LIMIT_MAX_REQUESTS = 10  # 每窗口最多 10 次请求
 _rate_limit_buckets: dict[str, list[float]] = defaultdict(list)
+
+SESSION_COOKIE_NAME = "socratic_session"
+SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30
+MAX_SERVER_SSE_FIELD_LENGTH = 8000
+_CLIENT_THREAD_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+_LOCAL_ENVIRONMENTS = {"development", "local", "test"}
+_graph: Any | None = None
+
+
+def _truncate_sse_text(value: Any) -> Any:
+    if isinstance(value, str):
+        return value[:MAX_SERVER_SSE_FIELD_LENGTH]
+    if isinstance(value, dict):
+        return {key: _truncate_sse_text(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_truncate_sse_text(item) for item in value]
+    return value
 
 
 @app.middleware("http")
@@ -57,7 +78,10 @@ async def rate_limit_middleware(request: Request, call_next):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -99,16 +123,90 @@ def _init_llm_and_graph():
     return graph
 
 
-_graph = _init_llm_and_graph()
+def _get_graph():
+    global _graph
+    if _graph is None:
+        _graph = _init_llm_and_graph()
+    return _graph
+
+
+def _is_local_development() -> bool:
+    return os.getenv("ENVIRONMENT", "").lower() in _LOCAL_ENVIRONMENTS
+
+
+def _session_secret() -> bytes:
+    secret = os.getenv("SESSION_SECRET")
+    if not secret:
+        if _is_local_development():
+            secret = "local-dev-session-secret"
+        else:
+            raise RuntimeError("未设置 SESSION_SECRET。请为会话签名配置独立密钥。")
+    return secret.encode("utf-8")
+
+
+def _sign_session_id(session_id: str) -> str:
+    expires_at = int(time.time()) + SESSION_COOKIE_MAX_AGE
+    payload = f"{session_id}:{expires_at}"
+    signature = hmac.new(_session_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{payload}.{signature}"
+
+
+def _verify_session_cookie(value: str) -> str | None:
+    payload, separator, signature = value.partition(".")
+    session_id, payload_separator, expires_at_text = payload.partition(":")
+    if not separator or not payload_separator or not _is_valid_session_id(session_id):
+        return None
+
+    try:
+        expires_at = int(expires_at_text)
+    except ValueError:
+        return None
+
+    if expires_at <= int(time.time()):
+        return None
+
+    expected = hmac.new(_session_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    if hmac.compare_digest(signature, expected):
+        return session_id
+    return None
+
+
+def _new_session_id() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def _is_valid_session_id(value: str) -> bool:
+    return bool(value) and len(value) <= 128 and all(ch.isalnum() or ch in "-_" for ch in value)
+
+
+def _get_or_create_session_id(request: Request) -> tuple[str, bool]:
+    existing = request.cookies.get(SESSION_COOKIE_NAME, "")
+    verified = _verify_session_cookie(existing)
+    if verified:
+        return verified, False
+    return _new_session_id(), True
+
+
+def _sanitize_client_thread_id(value: str | None) -> str:
+    candidate = (value or "").strip()
+    if _CLIENT_THREAD_ID_PATTERN.fullmatch(candidate):
+        return candidate
+    return "default"
+
+
+def _derive_owned_thread_id(session_id: str, client_thread_id: str) -> str:
+    session_digest = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:24]
+    thread_digest = hashlib.sha256(client_thread_id.encode("utf-8")).hexdigest()[:24]
+    return f"sess_{session_digest}_{thread_digest}"
 
 
 class SocraticRequest(BaseModel):
     text: str = Field(min_length=1, max_length=5000, description="用户输入文本")
-    thread_id: str = Field(default="", max_length=64, description="多轮会话ID")
+    thread_id: str = Field(default="", max_length=128, description="多轮会话ID")
 
 
 def _sse_event(event: str, data: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+    return f"event: {event}\ndata: {json.dumps(_truncate_sse_text(data), ensure_ascii=False)}\n\n"
 
 
 def _empty_state(user_input: str, turn_count: int) -> dict:
@@ -134,30 +232,35 @@ def _empty_state(user_input: str, turn_count: int) -> dict:
     }
 
 
+def _state_values(graph: Any, config: dict) -> dict:
+    current_state = graph.get_state(config)
+    return current_state.values if current_state.values else {}
+
+
+def _build_initial_state(user_input: str, prev_state: dict) -> dict:
+    state = _empty_state(user_input, int(prev_state.get("turn_count", 0)) + 1)
+    state["admitted_premises"] = copy.deepcopy(prev_state.get("admitted_premises", []))
+    return state
+
+
 async def _stream_socratic(user_input: str, thread_id: str) -> AsyncGenerator[str, None]:
-    config = {"configurable": {"thread_id": thread_id}}
-
-    # 从 checkpointer 恢复 turn_count（若为已有会话）
     try:
-        current_state = _graph.get_state(config)
-        prev_turn = current_state.values.get("turn_count", 0) if current_state.values else 0
-    except Exception:
-        prev_turn = 0
+        graph = _get_graph()
+        config = {"configurable": {"thread_id": thread_id}}
+        prev_state = _state_values(graph, config)
+        initial_state = _build_initial_state(user_input, prev_state)
 
-    initial_state = _empty_state(user_input, prev_turn + 1)
+        yield _sse_event("status", {
+            "phase": "started",
+            "message": "开始分析...",
+            "thread_id": thread_id,
+            "turn": initial_state["turn_count"],
+        })
 
-    yield _sse_event("status", {
-        "phase": "started",
-        "message": "开始分析...",
-        "thread_id": thread_id,
-        "turn": prev_turn + 1,
-    })
+        current_node = None
+        intermediate_data: dict = {}
 
-    current_node = None
-    intermediate_data: dict = {}
-
-    try:
-        async for event in _graph.astream_events(initial_state, config, version="v2"):
+        async for event in graph.astream_events(initial_state, config, version="v2"):
             kind = event.get("event")
             name = event.get("name")
 
@@ -213,20 +316,21 @@ async def _stream_socratic(user_input: str, thread_id: str) -> AsyncGenerator[st
                 "has_contradiction": analyzer_output.get("has_contradiction", False),
                 "contradiction_details": analyzer_output.get("contradiction_details"),
                 "target_premise_id": analyzer_output.get("target_premise_id"),
-                "turn": prev_turn + 1,
+                "turn": initial_state["turn_count"],
             }
         )
         yield "data: [DONE]\n\n"
 
-    except Exception as e:
+    except Exception:
         logging.exception("Socratic stream error")
         yield _sse_event("error", {"message": "处理请求时发生内部错误，请稍后重试。"})
 
 
 @app.post("/api/v1/socratic/stream")
 async def socratic_stream(req: SocraticRequest, request: Request):
-    # 使用前端传入的 thread_id 或自动生成新会话
-    thread_id = req.thread_id.strip() if req.thread_id else f"web_{uuid.uuid4().hex[:8]}"
+    session_id, is_new_session = _get_or_create_session_id(request)
+    client_thread_id = _sanitize_client_thread_id(req.thread_id)
+    thread_id = _derive_owned_thread_id(session_id, client_thread_id)
 
     async def event_generator():
         disconnected = False
@@ -253,7 +357,7 @@ async def socratic_stream(req: SocraticRequest, request: Request):
             except asyncio.CancelledError:
                 pass
 
-    return StreamingResponse(
+    response = StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
         headers={
@@ -262,6 +366,18 @@ async def socratic_stream(req: SocraticRequest, request: Request):
             "X-Accel-Buffering": "no",
         },
     )
+
+    if is_new_session:
+        response.set_cookie(
+            SESSION_COOKIE_NAME,
+            _sign_session_id(session_id),
+            max_age=SESSION_COOKIE_MAX_AGE,
+            httponly=True,
+            samesite="lax",
+            secure=not _is_local_development(),
+        )
+
+    return response
 
 
 @app.get("/health")

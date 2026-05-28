@@ -1,9 +1,11 @@
 """Batch corpus generator - 9 schools x 6 entries = 54 total"""
-import json, os, sys
+import json
+import os
+import sys
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 load_dotenv()
 

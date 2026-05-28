@@ -9,7 +9,7 @@
 ```bash
 # 1. 配置环境变量
 cp .env.example .env
-# 编辑 .env 填入 OPENAI_API_KEY 和 EMBEDDING_API_KEY
+# 编辑 .env 填入 OPENAI_API_KEY、EMBEDDING_API_KEY 和 SESSION_SECRET
 
 # 2. 安装后端依赖
 .venv\Scripts\python.exe -m pip install -r requirements.txt
@@ -95,6 +95,8 @@ START → Analyzer → Retriever (ChromaDB) ──距离≤阈值──→ Socra
 |------|------|
 | `OPENAI_API_KEY` / `OPENAI_API_BASE` / `OPENAI_MODEL_NAME` | 对话 LLM（Analyzer + Ironist） |
 | `EMBEDDING_API_KEY` / `EMBEDDING_API_BASE` / `EMBEDDING_MODEL_NAME` | Embedding 模型（ChromaDB 检索） |
+| `ENVIRONMENT` | 运行环境。local/test/development 使用本地 cookie；生产设为 `production` |
+| `SESSION_SECRET` | 服务端会话签名密钥。生产必填，用于 HttpOnly 会话 cookie |
 | `TAVILY_API_KEY` | 可选。网络搜索（当 ChromaDB 不够时） |
 | `SIMILARITY_THRESHOLD` | 可选。余弦距离阈值，默认 0.5 |
 

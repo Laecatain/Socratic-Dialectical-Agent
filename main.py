@@ -100,7 +100,7 @@ def _debug_print(result: dict) -> None:
     print(f"  [DEBUG] 相关度分数: {result.get('rag_relevance_score')}")
     has_contra = result.get("has_contradiction")
     if has_contra:
-        print(f"  [DEBUG] ⚡ 逻辑矛盾检测: True")
+        print("  [DEBUG] ⚡ 逻辑矛盾检测: True")
         print(f"  [DEBUG] 矛盾分析: {result.get('contradiction_details')}")
         print(f"  [DEBUG] 被攻击前提ID: {result.get('target_premise_id')}")
     premises = result.get("admitted_premises", [])

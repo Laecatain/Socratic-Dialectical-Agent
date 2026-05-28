@@ -1,5 +1,4 @@
-﻿import os
-path = r"E:\app\Socratic Dialectical Agent\frontend\src\App.tsx"
+﻿path = r"E:\app\Socratic Dialectical Agent\frontend\src\App.tsx"
 with open(path, "w", encoding="utf-8") as f:
     f.write("""import { useSocraticStream } from './hooks/useSocraticStream';
 import Sidebar from './components/Sidebar';
